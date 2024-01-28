@@ -16,6 +16,7 @@ import { chatSetting } from "./chat";
 export const KnowledgeCutOffDate: Record<string, string> = {
   default: "2021-09",
   "gpt-4-1106-preview": "2023-04",
+  "gpt-4-0125-preview": "2023-04",
   "gpt-4-vision-preview": "2023-04",
 };
 
@@ -153,6 +154,7 @@ interface subModelType{
     onError?:(d?:any)=>void
     signal?:AbortSignal
     model?:string
+    uuid?:string|number
 }
 function getHeaderAuthorization(){
     if(!gptServerStore.myData.OPENAI_API_KEY){
@@ -185,13 +187,26 @@ export const subModel= async (opt: subModelType)=>{
     //
     const model= opt.model?? ( gptConfigStore.myData.model?gptConfigStore.myData.model: "gpt-3.5-turbo");
     let max_tokens= gptConfigStore.myData.max_tokens;
+    let temperature= 0.5;
+    let top_p= 1;
+    let presence_penalty= 0 , frequency_penalty=0;
+    if(opt.uuid){
+        const chatSet= new chatSetting( +opt.uuid);
+        const gStore= chatSet.getGptConfig();
+        temperature= gStore.temperature??temperature;
+        top_p = gStore.top_p??top_p;
+        presence_penalty = gStore.presence_penalty??presence_penalty;
+        frequency_penalty = gStore.frequency_penalty??frequency_penalty;
+        max_tokens= gStore.max_tokens;
+    }
     if(model=='gpt-4-vision-preview' && max_tokens>2048) max_tokens=2048;
+
     let body ={
             max_tokens ,
             model ,
-            "temperature": 0.5,
-            "top_p": 1,
-            "presence_penalty":0,
+            temperature,
+            top_p,
+            presence_penalty ,frequency_penalty,
             "messages": opt.message
            ,stream:true
         }
@@ -357,9 +372,11 @@ export const blurClean= ()=>{
   gptServerStore.myData.UPLOADER_URL=  myTrim( myTrim( gptServerStore.myData.UPLOADER_URL.trim(),'/'),'\\');
 }
 
-export const countTokens= async ( dataSources:Chat.Chat[], input:string )=>{
-    let rz={system:0,input:0 ,history:0,remain:330,modelTokens:'4k',planOuter: gptConfigStore.myData.max_tokens  }
-    const model = gptConfigStore.myData.model;
+export const countTokens= async ( dataSources:Chat.Chat[], input:string ,uuid:number )=>{
+    const chatSet= new chatSetting(uuid);
+    const myStore= chatSet.getGptConfig();
+    let rz={system:0,input:0 ,history:0,remain:330,modelTokens:'4k',planOuter:myStore.max_tokens  }
+    const model =myStore.model;
     const max= getModelMax(model );
     let unit= 1024;
     if(  model=='gpt-4-1106-preview' || model=='gpt-4-vision-preview' ) unit=1000;
@@ -388,7 +405,10 @@ const getModelMax=( model:string )=>{
         return 32;
     }else if( model.indexOf('64k')>-1  ){
         return 64;
-    }else if( model.indexOf('128k')>-1 || model=='gpt-4-1106-preview' || model=='gpt-4-vision-preview' ){
+    }else if( model.indexOf('128k')>-1 
+    || model=='gpt-4-1106-preview' 
+    || model=='gpt-4-0125-preview' 
+    || model=='gpt-4-vision-preview' ){
         return 128; 
     }else if( model.indexOf('gpt-4')>-1  ){  
         max=8;
